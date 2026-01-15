@@ -45,6 +45,17 @@ def quantize_activation_per_tensor_absmax(t, n_bits=8):
     return t
 
 
+@torch.no_grad()
+def quantize_activation_per_channel_absmax_static(t, act_scale, n_bits=8):
+    t_shape = t.shape
+    t.view(-1, t_shape[-1])
+    q_max = 2 ** (n_bits - 1) - 1
+    scales = act_scale.to(device=t.device, dtype=t.dtype)
+    scales = scales.clamp(min=1e-5).div(q_max).view(1, -1)
+    t.div_(scales).round_().mul_(scales)
+    return t
+
+
 class W8A8Linear(nn.Module):
     def __init__(
         self,
@@ -53,6 +64,7 @@ class W8A8Linear(nn.Module):
         bias=True,
         act_quant="per_token",
         quantize_output=False,
+        act_scale=None,
     ):
         super().__init__()
         self.in_features = in_features
@@ -83,6 +95,15 @@ class W8A8Linear(nn.Module):
         elif act_quant == "per_tensor":
             self.act_quant_name = "per_tensor"
             self.act_quant = partial(quantize_activation_per_tensor_absmax, n_bits=8)
+        elif act_quant == "per_channel_static":
+            if act_scale is None:
+                raise ValueError("act_scale is required for per_channel_static")
+            self.act_quant_name = "per_channel_static"
+            self.act_quant = partial(
+                quantize_activation_per_channel_absmax_static,
+                act_scale=act_scale,
+                n_bits=8,
+            )
         else:
             raise ValueError(f"Invalid act_quant: {act_quant}")
 
@@ -109,7 +130,11 @@ class W8A8Linear(nn.Module):
 
     @staticmethod
     def from_float(
-        module, weight_quant="per_channel", act_quant="per_token", quantize_output=False
+        module,
+        weight_quant="per_channel",
+        act_quant="per_token",
+        quantize_output=False,
+        act_scale=None,
     ):
         assert isinstance(module, torch.nn.Linear)
         new_module = W8A8Linear(
@@ -118,6 +143,7 @@ class W8A8Linear(nn.Module):
             module.bias is not None,
             act_quant=act_quant,
             quantize_output=quantize_output,
+            act_scale=act_scale,
         )
         if weight_quant == "per_channel":
             new_module.weight = quantize_weight_per_channel_absmax(
@@ -181,7 +207,11 @@ def quantize_opt(
 
 
 def quantize_llama_like(
-    model, weight_quant="per_channel", act_quant="per_token", quantize_bmm_input=False
+    model,
+    weight_quant="per_channel",
+    act_quant="per_token",
+    quantize_bmm_input=False,
+    act_scales=None,
 ):
     from transformers.models.llama.modeling_llama import (
         LlamaAttention,
@@ -193,16 +223,35 @@ def quantize_llama_like(
         MistralMLP,
     )
 
+    def get_act_scale(module_name):
+        if act_scales is None:
+            return None
+        if module_name in act_scales:
+            return act_scales[module_name]
+        full_name = f"model.{module_name}"
+        if full_name in act_scales:
+            return act_scales[full_name]
+        return None
+
     for name, m in model.model.named_modules():
         if isinstance(m, (LlamaMLP, MistralMLP)):
             m.gate_proj = W8A8Linear.from_float(
-                m.gate_proj, weight_quant=weight_quant, act_quant=act_quant
+                m.gate_proj,
+                weight_quant=weight_quant,
+                act_quant=act_quant,
+                act_scale=get_act_scale(f"{name}.gate_proj"),
             )
             m.up_proj = W8A8Linear.from_float(
-                m.up_proj, weight_quant=weight_quant, act_quant=act_quant
+                m.up_proj,
+                weight_quant=weight_quant,
+                act_quant=act_quant,
+                act_scale=get_act_scale(f"{name}.up_proj"),
             )
             m.down_proj = W8A8Linear.from_float(
-                m.down_proj, weight_quant=weight_quant, act_quant=act_quant
+                m.down_proj,
+                weight_quant=weight_quant,
+                act_quant=act_quant,
+                act_scale=get_act_scale(f"{name}.down_proj"),
             )
         elif isinstance(m, (LlamaAttention, MistralAttention)):
             # Her we simulate quantizing BMM inputs by quantizing the output of q_proj, k_proj, v_proj
@@ -211,21 +260,27 @@ def quantize_llama_like(
                 weight_quant=weight_quant,
                 act_quant=act_quant,
                 quantize_output=quantize_bmm_input,
+                act_scale=get_act_scale(f"{name}.q_proj"),
             )
             m.k_proj = W8A8Linear.from_float(
                 m.k_proj,
                 weight_quant=weight_quant,
                 act_quant=act_quant,
                 quantize_output=quantize_bmm_input,
+                act_scale=get_act_scale(f"{name}.k_proj"),
             )
             m.v_proj = W8A8Linear.from_float(
                 m.v_proj,
                 weight_quant=weight_quant,
                 act_quant=act_quant,
                 quantize_output=quantize_bmm_input,
+                act_scale=get_act_scale(f"{name}.v_proj"),
             )
             m.o_proj = W8A8Linear.from_float(
-                m.o_proj, weight_quant=weight_quant, act_quant=act_quant
+                m.o_proj,
+                weight_quant=weight_quant,
+                act_quant=act_quant,
+                act_scale=get_act_scale(f"{name}.o_proj"),
             )
     return model
 
