@@ -142,7 +142,23 @@ class W8A8Linear(nn.Module):
     def apply_activation_sparsity(self, x):
         x_shape = x.shape
         x_2d = x.view(-1, x_shape[-1])
-        w_col_norm = self.weight.float().pow(2).sum(dim=0).sqrt()
+        weight = self.weight.float()
+        q_low = torch.quantile(weight, 0.005)
+        q_high = torch.quantile(weight, 0.995)
+        within_range = (weight >= q_low) & (weight <= q_high)
+        if within_range.sum() < 2:
+            weight_processed = weight
+        else:
+            w_filtered = weight[within_range]
+            mean = w_filtered.mean()
+            std = w_filtered.std()
+            std = std.clamp(min=1e-8)
+            weight_processed = (weight - mean) / std
+            weight_processed = weight_processed.clamp(
+                min=(q_low - mean) / std,
+                max=(q_high - mean) / std
+            )
+        w_col_norm = weight_processed.pow(2).sum(dim=0).sqrt()
         min_norm = w_col_norm.min().clamp(min=1e-5)
         scale = (w_col_norm / min_norm).view(1, -1)
         metric = x_2d.abs().float() * scale
