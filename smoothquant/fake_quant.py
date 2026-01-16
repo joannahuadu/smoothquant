@@ -122,6 +122,8 @@ class W8A8Linear(nn.Module):
             self.output_quant_name = "None"
             self.output_quant = lambda x: x
 
+        self.register_buffer("sparsity_scale", None)
+
     def to(self, *args, **kwargs):
         super(W8A8Linear, self).to(*args, **kwargs)
         self.weight = self.weight.to(*args, **kwargs)
@@ -142,25 +144,11 @@ class W8A8Linear(nn.Module):
     def apply_activation_sparsity(self, x):
         x_shape = x.shape
         x_2d = x.view(-1, x_shape[-1])
-        weight = self.weight.float()
-        q_low = torch.quantile(weight, 0.005)
-        q_high = torch.quantile(weight, 0.995)
-        within_range = (weight >= q_low) & (weight <= q_high)
-        if within_range.sum() < 2:
-            weight_processed = weight
+        if self.sparsity_scale is None:
+            raise ValueError("sparsity_scale is not set. Ensure from_float is used to create the module.")
         else:
-            w_filtered = weight[within_range]
-            mean = w_filtered.mean()
-            std = w_filtered.std()
-            std = std.clamp(min=1e-8)
-            weight_processed = (weight - mean) / std
-            weight_processed = weight_processed.clamp(
-                min=(q_low - mean) / std,
-                max=(q_high - mean) / std
-            )
-        w_col_norm = weight_processed.pow(2).sum(dim=0).sqrt()
-        min_norm = w_col_norm.min().clamp(min=1e-5)
-        scale = (w_col_norm / min_norm).view(1, -1)
+            scale = self.sparsity_scale
+
         metric = x_2d.abs().float() * scale
 
         mask = torch.zeros_like(metric, dtype=torch.bool)
@@ -213,6 +201,41 @@ class W8A8Linear(nn.Module):
         new_module.weight_quant_name = weight_quant
         if module.bias is not None:
             new_module.bias = module.bias
+
+        with torch.no_grad():
+            weight = new_module.weight.float()
+            weight_flat = weight.flatten()
+            num_elements = weight_flat.numel()
+            if num_elements > 1000000:
+                sample_size = min(100000, num_elements)
+                indices = torch.randperm(num_elements, device=weight.device)[:sample_size]
+                weight_sample = weight_flat[indices]
+                q_low = torch.quantile(weight_sample, 0.005)
+                q_high = torch.quantile(weight_sample, 0.995)
+            else:
+                q_low = torch.quantile(weight_flat, 0.005)
+                q_high = torch.quantile(weight_flat, 0.995)
+            within_range = (weight >= q_low) & (weight <= q_high)
+
+            if within_range.sum() < 2:
+                weight_processed = weight
+            else:
+                w_filtered = weight[within_range]
+                mean = w_filtered.mean()
+                std = w_filtered.std()
+
+                std = std.clamp(min=1e-8)
+
+                weight_processed = (weight - mean) / std
+                weight_processed = weight_processed.clamp(
+                    min=(q_low - mean) / std,
+                    max=(q_high - mean) / std
+                )
+
+            w_col_norm = weight_processed.pow(2).sum(dim=0).sqrt()
+            min_norm = w_col_norm.min().clamp(min=1e-5)
+            new_module.sparsity_scale = (w_col_norm / min_norm).view(1, -1)
+
         return new_module
 
     def __repr__(self):
