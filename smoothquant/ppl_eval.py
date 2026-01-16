@@ -38,6 +38,7 @@ act_sparsity_n = 0
 act_sparsity_m = 0
 if act_sparsity:
     act_sparsity_n, act_sparsity_m = map(int, act_sparsity.split(":"))
+print(f"N:M Sparsity: {act_sparsity_n}: {act_sparsity_m}")
 
 
 class Evaluator:
@@ -82,9 +83,11 @@ model = AutoModelForCausalLM.from_pretrained(
 )
 
 if args.smooth:
+    print("smooth...")
     act_scales = torch.load(act_scales_path)
     smooth_lm(model, act_scales, alpha)
 if args.quantize:
+    print("quantize...")
     model = quantize_model(
         model,
         weight_quant="per_channel",
