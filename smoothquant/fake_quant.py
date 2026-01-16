@@ -62,6 +62,8 @@ class W8A8Linear(nn.Module):
         in_features,
         out_features,
         bias=True,
+        w_bits=8,
+        a_bits=8,
         act_quant="per_token",
         quantize_output=False,
         act_scale=None,
@@ -71,6 +73,8 @@ class W8A8Linear(nn.Module):
         super().__init__()
         self.in_features = in_features
         self.out_features = out_features
+        self.w_bits = w_bits
+        self.a_bits = a_bits
         self.act_sparsity_n = act_sparsity_n
         self.act_sparsity_m = act_sparsity_m
 
@@ -95,10 +99,10 @@ class W8A8Linear(nn.Module):
 
         if act_quant == "per_token":
             self.act_quant_name = "per_token"
-            self.act_quant = partial(quantize_activation_per_token_absmax, n_bits=8)
+            self.act_quant = partial(quantize_activation_per_token_absmax, n_bits=a_bits)
         elif act_quant == "per_tensor":
             self.act_quant_name = "per_tensor"
-            self.act_quant = partial(quantize_activation_per_tensor_absmax, n_bits=8)
+            self.act_quant = partial(quantize_activation_per_tensor_absmax, n_bits=a_bits)
         elif act_quant == "per_channel_static":
             if act_scale is None:
                 raise ValueError("act_scale is required for per_channel_static")
@@ -106,7 +110,7 @@ class W8A8Linear(nn.Module):
             self.act_quant = partial(
                 quantize_activation_per_channel_absmax_static,
                 act_scale=act_scale,
-                n_bits=8,
+                n_bits=a_bits,
             )
         else:
             raise ValueError(f"Invalid act_quant: {act_quant}")
@@ -159,6 +163,8 @@ class W8A8Linear(nn.Module):
     def from_float(
         module,
         weight_quant="per_channel",
+        w_bits=8,
+        a_bits=8,
         act_quant="per_token",
         quantize_output=False,
         act_scale=None,
@@ -170,6 +176,8 @@ class W8A8Linear(nn.Module):
             module.in_features,
             module.out_features,
             module.bias is not None,
+            w_bits=w_bits,
+            a_bits=a_bits,
             act_quant=act_quant,
             quantize_output=quantize_output,
             act_scale=act_scale,
@@ -178,11 +186,11 @@ class W8A8Linear(nn.Module):
         )
         if weight_quant == "per_channel":
             new_module.weight = quantize_weight_per_channel_absmax(
-                module.weight, n_bits=8
-            )  # use 8-bit integer for weight
+                module.weight, n_bits=w_bits
+            )  # use configurable bit width for weight
         elif weight_quant == "per_tensor":
             new_module.weight = quantize_weight_per_tensor_absmax(
-                module.weight, n_bits=8
+                module.weight, n_bits=w_bits
             )
         else:
             raise ValueError(f"Invalid weight_quant: {weight_quant}")
@@ -192,12 +200,14 @@ class W8A8Linear(nn.Module):
         return new_module
 
     def __repr__(self):
-        return f"W8A8Linear({self.in_features}, {self.out_features}, bias={self.bias is not None}, weight_quant={self.weight_quant_name}, act_quant={self.act_quant_name}, output_quant={self.output_quant_name})"
+        return f"W{self.w_bits}A{self.a_bits}Linear({self.in_features}, {self.out_features}, bias={self.bias is not None}, weight_quant={self.weight_quant_name}, act_quant={self.act_quant_name}, output_quant={self.output_quant_name})"
 
 
 def quantize_opt(
     model,
     weight_quant="per_tensor",
+    w_bits=8,
+    a_bits=8,
     act_quant="per_tensor",
     quantize_bmm_input=True,
     act_sparsity_n=0,
@@ -213,6 +223,8 @@ def quantize_opt(
             m.fc1 = W8A8Linear.from_float(
                 m.fc1,
                 weight_quant=weight_quant,
+                w_bits=w_bits,
+                a_bits=a_bits,
                 act_quant=act_quant,
                 act_sparsity_n=act_sparsity_n,
                 act_sparsity_m=act_sparsity_m,
@@ -220,6 +232,8 @@ def quantize_opt(
             m.fc2 = W8A8Linear.from_float(
                 m.fc2,
                 weight_quant=weight_quant,
+                w_bits=w_bits,
+                a_bits=a_bits,
                 act_quant=act_quant,
                 act_sparsity_n=act_sparsity_n,
                 act_sparsity_m=act_sparsity_m,
@@ -229,6 +243,8 @@ def quantize_opt(
             m.q_proj = W8A8Linear.from_float(
                 m.q_proj,
                 weight_quant=weight_quant,
+                w_bits=w_bits,
+                a_bits=a_bits,
                 act_quant=act_quant,
                 quantize_output=quantize_bmm_input,
                 act_sparsity_n=act_sparsity_n,
@@ -237,6 +253,8 @@ def quantize_opt(
             m.k_proj = W8A8Linear.from_float(
                 m.k_proj,
                 weight_quant=weight_quant,
+                w_bits=w_bits,
+                a_bits=a_bits,
                 act_quant=act_quant,
                 quantize_output=quantize_bmm_input,
                 act_sparsity_n=act_sparsity_n,
@@ -245,6 +263,8 @@ def quantize_opt(
             m.v_proj = W8A8Linear.from_float(
                 m.v_proj,
                 weight_quant=weight_quant,
+                w_bits=w_bits,
+                a_bits=a_bits,
                 act_quant=act_quant,
                 quantize_output=quantize_bmm_input,
                 act_sparsity_n=act_sparsity_n,
@@ -253,6 +273,8 @@ def quantize_opt(
             m.out_proj = W8A8Linear.from_float(
                 m.out_proj,
                 weight_quant=weight_quant,
+                w_bits=w_bits,
+                a_bits=a_bits,
                 act_quant=act_quant,
                 act_sparsity_n=act_sparsity_n,
                 act_sparsity_m=act_sparsity_m,
@@ -263,6 +285,8 @@ def quantize_opt(
 def quantize_llama_like(
     model,
     weight_quant="per_channel",
+    w_bits=8,
+    a_bits=8,
     act_quant="per_token",
     quantize_bmm_input=False,
     act_scales=None,
@@ -294,6 +318,8 @@ def quantize_llama_like(
             m.gate_proj = W8A8Linear.from_float(
                 m.gate_proj,
                 weight_quant=weight_quant,
+                w_bits=w_bits,
+                a_bits=a_bits,
                 act_quant=act_quant,
                 act_scale=get_act_scale(f"{name}.gate_proj"),
                 act_sparsity_n=act_sparsity_n,
@@ -302,6 +328,8 @@ def quantize_llama_like(
             m.up_proj = W8A8Linear.from_float(
                 m.up_proj,
                 weight_quant=weight_quant,
+                w_bits=w_bits,
+                a_bits=a_bits,
                 act_quant=act_quant,
                 act_scale=get_act_scale(f"{name}.up_proj"),
                 act_sparsity_n=act_sparsity_n,
@@ -310,6 +338,8 @@ def quantize_llama_like(
             m.down_proj = W8A8Linear.from_float(
                 m.down_proj,
                 weight_quant=weight_quant,
+                w_bits=w_bits,
+                a_bits=a_bits,
                 act_quant=act_quant,
                 act_scale=get_act_scale(f"{name}.down_proj"),
                 act_sparsity_n=act_sparsity_n,
@@ -320,6 +350,8 @@ def quantize_llama_like(
             m.q_proj = W8A8Linear.from_float(
                 m.q_proj,
                 weight_quant=weight_quant,
+                w_bits=w_bits,
+                a_bits=a_bits,
                 act_quant=act_quant,
                 quantize_output=quantize_bmm_input,
                 act_scale=get_act_scale(f"{name}.q_proj"),
@@ -329,6 +361,8 @@ def quantize_llama_like(
             m.k_proj = W8A8Linear.from_float(
                 m.k_proj,
                 weight_quant=weight_quant,
+                w_bits=w_bits,
+                a_bits=a_bits,
                 act_quant=act_quant,
                 quantize_output=quantize_bmm_input,
                 act_scale=get_act_scale(f"{name}.k_proj"),
@@ -338,6 +372,8 @@ def quantize_llama_like(
             m.v_proj = W8A8Linear.from_float(
                 m.v_proj,
                 weight_quant=weight_quant,
+                w_bits=w_bits,
+                a_bits=a_bits,
                 act_quant=act_quant,
                 quantize_output=quantize_bmm_input,
                 act_scale=get_act_scale(f"{name}.v_proj"),
@@ -347,6 +383,8 @@ def quantize_llama_like(
             m.o_proj = W8A8Linear.from_float(
                 m.o_proj,
                 weight_quant=weight_quant,
+                w_bits=w_bits,
+                a_bits=a_bits,
                 act_quant=act_quant,
                 act_scale=get_act_scale(f"{name}.o_proj"),
                 act_sparsity_n=act_sparsity_n,
@@ -358,6 +396,8 @@ def quantize_llama_like(
 def quantize_mixtral(
     model,
     weight_quant="per_channel",
+    w_bits=8,
+    a_bits=8,
     act_quant="per_token",
     quantize_bmm_input=False,
     act_sparsity_n=0,
@@ -374,6 +414,8 @@ def quantize_mixtral(
             m.w1 = W8A8Linear.from_float(
                 m.w1,
                 weight_quant=weight_quant,
+                w_bits=w_bits,
+                a_bits=a_bits,
                 act_quant=act_quant,
                 act_sparsity_n=act_sparsity_n,
                 act_sparsity_m=act_sparsity_m,
@@ -381,6 +423,8 @@ def quantize_mixtral(
             m.w2 = W8A8Linear.from_float(
                 m.w2,
                 weight_quant=weight_quant,
+                w_bits=w_bits,
+                a_bits=a_bits,
                 act_quant=act_quant,
                 act_sparsity_n=act_sparsity_n,
                 act_sparsity_m=act_sparsity_m,
@@ -388,6 +432,8 @@ def quantize_mixtral(
             m.w3 = W8A8Linear.from_float(
                 m.w3,
                 weight_quant=weight_quant,
+                w_bits=w_bits,
+                a_bits=a_bits,
                 act_quant=act_quant,
                 act_sparsity_n=act_sparsity_n,
                 act_sparsity_m=act_sparsity_m,
@@ -397,6 +443,8 @@ def quantize_mixtral(
             m.q_proj = W8A8Linear.from_float(
                 m.q_proj,
                 weight_quant=weight_quant,
+                w_bits=w_bits,
+                a_bits=a_bits,
                 act_quant=act_quant,
                 quantize_output=quantize_bmm_input,
                 act_sparsity_n=act_sparsity_n,
@@ -405,6 +453,8 @@ def quantize_mixtral(
             m.k_proj = W8A8Linear.from_float(
                 m.k_proj,
                 weight_quant=weight_quant,
+                w_bits=w_bits,
+                a_bits=a_bits,
                 act_quant=act_quant,
                 quantize_output=quantize_bmm_input,
                 act_sparsity_n=act_sparsity_n,
@@ -413,6 +463,8 @@ def quantize_mixtral(
             m.v_proj = W8A8Linear.from_float(
                 m.v_proj,
                 weight_quant=weight_quant,
+                w_bits=w_bits,
+                a_bits=a_bits,
                 act_quant=act_quant,
                 quantize_output=quantize_bmm_input,
                 act_sparsity_n=act_sparsity_n,
@@ -421,6 +473,8 @@ def quantize_mixtral(
             m.o_proj = W8A8Linear.from_float(
                 m.o_proj,
                 weight_quant=weight_quant,
+                w_bits=w_bits,
+                a_bits=a_bits,
                 act_quant=act_quant,
                 act_sparsity_n=act_sparsity_n,
                 act_sparsity_m=act_sparsity_m,
@@ -429,6 +483,8 @@ def quantize_mixtral(
             m.gate = W8A8Linear.from_float(
                 m.gate,
                 weight_quant=weight_quant,
+                w_bits=w_bits,
+                a_bits=a_bits,
                 act_quant=act_quant,
                 act_sparsity_n=act_sparsity_n,
                 act_sparsity_m=act_sparsity_m,
@@ -439,6 +495,8 @@ def quantize_mixtral(
 def quantize_falcon(
     model,
     weight_quant="per_channel",
+    w_bits=8,
+    a_bits=8,
     act_quant="per_token",
     quantize_bmm_input=True,
     act_sparsity_n=0,
@@ -454,6 +512,8 @@ def quantize_falcon(
             m.dense_h_to_4h = W8A8Linear.from_float(
                 m.dense_h_to_4h,
                 weight_quant=weight_quant,
+                w_bits=w_bits,
+                a_bits=a_bits,
                 act_quant=act_quant,
                 act_sparsity_n=act_sparsity_n,
                 act_sparsity_m=act_sparsity_m,
@@ -461,6 +521,8 @@ def quantize_falcon(
             m.dense_4h_to_h = W8A8Linear.from_float(
                 m.dense_4h_to_h,
                 weight_quant=weight_quant,
+                w_bits=w_bits,
+                a_bits=a_bits,
                 act_quant=act_quant,
                 act_sparsity_n=act_sparsity_n,
                 act_sparsity_m=act_sparsity_m,
@@ -470,6 +532,8 @@ def quantize_falcon(
             m.query_key_value = W8A8Linear.from_float(
                 m.query_key_value,
                 weight_quant=weight_quant,
+                w_bits=w_bits,
+                a_bits=a_bits,
                 act_quant=act_quant,
                 quantize_output=quantize_bmm_input,
                 act_sparsity_n=act_sparsity_n,
@@ -478,6 +542,8 @@ def quantize_falcon(
             m.dense = W8A8Linear.from_float(
                 m.dense,
                 weight_quant=weight_quant,
+                w_bits=w_bits,
+                a_bits=a_bits,
                 act_quant=act_quant,
                 act_sparsity_n=act_sparsity_n,
                 act_sparsity_m=act_sparsity_m,
@@ -488,6 +554,8 @@ def quantize_falcon(
 def quantize_model(
     model,
     weight_quant="per_channel",
+    w_bits=8,
+    a_bits=8,
     act_quant="per_token",
     quantize_bmm_input=False,
     act_sparsity_n=0,
@@ -503,6 +571,8 @@ def quantize_model(
         return quantize_opt(
             model,
             weight_quant=weight_quant,
+            w_bits=w_bits,
+            a_bits=a_bits,
             act_quant=act_quant,
             quantize_bmm_input=quantize_bmm_input,
             act_sparsity_n=act_sparsity_n,
@@ -512,6 +582,8 @@ def quantize_model(
         return quantize_llama_like(
             model,
             weight_quant=weight_quant,
+            w_bits=w_bits,
+            a_bits=a_bits,
             act_quant=act_quant,
             quantize_bmm_input=quantize_bmm_input,
             act_sparsity_n=act_sparsity_n,
@@ -521,6 +593,8 @@ def quantize_model(
         return quantize_mixtral(
             model,
             weight_quant=weight_quant,
+            w_bits=w_bits,
+            a_bits=a_bits,
             act_quant=act_quant,
             quantize_bmm_input=quantize_bmm_input,
             act_sparsity_n=act_sparsity_n,
@@ -530,6 +604,8 @@ def quantize_model(
         return quantize_falcon(
             model,
             weight_quant=weight_quant,
+            w_bits=w_bits,
+            a_bits=a_bits,
             act_quant=act_quant,
             quantize_bmm_input=quantize_bmm_input,
             act_sparsity_n=act_sparsity_n,
