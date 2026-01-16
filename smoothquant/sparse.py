@@ -198,7 +198,7 @@ def apply_activation_sparsity_to_model(
 
         # Skip if target_modules is specified and name doesn't match
         if target_modules is not None:
-            if not any(pattern in name for pattern in target_modules):
+            if any(pattern in name for pattern in target_modules):
                 continue
 
         # Create and register the hook

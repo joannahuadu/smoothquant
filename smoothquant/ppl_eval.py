@@ -39,6 +39,12 @@ parser.add_argument(
     default=8,
     help="Activation quantization bit width (default: 8)",
 )
+parser.add_argument(
+    "--target_modules",
+    type=str,
+    default=None,
+    help="Target modules for sparsity (e.g., 'q_proj,k_proj,v_proj')",
+)
 
 
 args = parser.parse_args()
@@ -49,6 +55,7 @@ n_samples = args.n_samples
 act_sparsity = args.act_sparsity
 w_bits = args.w_bits
 a_bits = args.a_bits
+target_modules = args.target_modules.split(",") if args.target_modules else None
 print(f"W{w_bits}A{a_bits} Quantization.")
 act_sparsity_n = 0
 act_sparsity_m = 0
@@ -116,13 +123,17 @@ if args.quantize:
         quantize_bmm_input=True,
         act_sparsity_n=act_sparsity_n,
         act_sparsity_m=act_sparsity_m,
+        target_modules=target_modules,
     )
 elif act_sparsity_n and act_sparsity_m:
     print(f"\nApplying activation sparsity ({act_sparsity_n}:{act_sparsity_m}) without quantization...")
+    if target_modules:
+        print(f"Target modules: {target_modules}")
     sparsity_hooks = apply_activation_sparsity_to_model(
         model,
         act_sparsity_n=act_sparsity_n,
         act_sparsity_m=act_sparsity_m,
+        target_modules=target_modules,
     )
     print(f"Registered {sparsity_hooks['num_hooks']} sparsity hooks")
 
