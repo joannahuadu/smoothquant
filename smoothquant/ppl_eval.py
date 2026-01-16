@@ -26,6 +26,18 @@ parser.add_argument(
     default="",
     help="Enable activation N:M sparsity, format '2:4'. Empty disables.",
 )
+parser.add_argument(
+    "--w_bits",
+    type=int,
+    default=8,
+    help="Weight quantization bit width (default: 8)",
+)
+parser.add_argument(
+    "--a_bits",
+    type=int,
+    default=8,
+    help="Activation quantization bit width (default: 8)",
+)
 
 
 args = parser.parse_args()
@@ -34,6 +46,8 @@ model_path = args.model_path
 act_scales_path = args.act_scales_path
 n_samples = args.n_samples
 act_sparsity = args.act_sparsity
+w_bits = args.w_bits
+a_bits = args.a_bits
 act_sparsity_n = 0
 act_sparsity_m = 0
 if act_sparsity:
@@ -88,6 +102,8 @@ if args.quantize:
     model = quantize_model(
         model,
         weight_quant="per_channel",
+        w_bits=w_bits,
+        a_bits=a_bits,
         act_quant="per_token",
         quantize_bmm_input=True,
         act_sparsity_n=act_sparsity_n,
