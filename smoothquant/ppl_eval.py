@@ -20,6 +20,12 @@ parser.add_argument(
 parser.add_argument("--n_samples", type=int, default=None)
 parser.add_argument("--smooth", action="store_true")
 parser.add_argument("--quantize", action="store_true")
+parser.add_argument(
+    "--act_sparsity",
+    type=str,
+    default="",
+    help="Enable activation N:M sparsity, format '2:4'. Empty disables.",
+)
 
 
 args = parser.parse_args()
@@ -27,6 +33,11 @@ alpha = args.alpha
 model_path = args.model_path
 act_scales_path = args.act_scales_path
 n_samples = args.n_samples
+act_sparsity = args.act_sparsity
+act_sparsity_n = 0
+act_sparsity_m = 0
+if act_sparsity:
+    act_sparsity_n, act_sparsity_m = map(int, act_sparsity.split(":"))
 
 
 class Evaluator:
@@ -79,6 +90,8 @@ if args.quantize:
         weight_quant="per_channel",
         act_quant="per_token",
         quantize_bmm_input=True,
+        act_sparsity_n=act_sparsity_n,
+        act_sparsity_m=act_sparsity_m,
     )
 
 ppl = evaluator.evaluate(model)
