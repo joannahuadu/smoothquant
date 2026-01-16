@@ -31,6 +31,7 @@ from lm_eval.models.huggingface import HFLM
 
 from smoothquant.smooth import smooth_lm
 from smoothquant.fake_quant import quantize_model
+from smoothquant.sparse import apply_activation_sparsity_to_model, remove_activation_sparsity_hooks
 
 
 def parse_args():
@@ -97,8 +98,8 @@ def parse_args():
     parser.add_argument(
         "--num_fewshot",
         type=int,
-        default=5,
-        help="Number of few-shot examples (default: 5)",
+        default=0,
+        help="Number of few-shot examples (default: 0, zero-shot)",
     )
     parser.add_argument(
         "--batch_size",
@@ -194,6 +195,9 @@ def main():
             print(f"Warning: Activation scales file not found: {args.act_scales_path}")
             print("Proceeding without SmoothQuant smoothing...")
 
+    # Track sparsity hooks for cleanup
+    sparsity_hooks = None
+
     # Apply quantization if specified
     if quantize_enabled:
         print(f"\nApplying w{args.w_bits}a{args.a_bits} quantization...")
@@ -208,6 +212,15 @@ def main():
             act_sparsity_m=act_sparsity_m,
         )
         print("Quantization applied successfully")
+    elif act_sparsity_n and act_sparsity_m:
+        # Apply only sparsity without quantization
+        print(f"\nApplying activation sparsity ({act_sparsity_n}:{act_sparsity_m}) without quantization...")
+        sparsity_hooks = apply_activation_sparsity_to_model(
+            model,
+            act_sparsity_n=act_sparsity_n,
+            act_sparsity_m=act_sparsity_m,
+        )
+        print(f"Registered {sparsity_hooks['num_hooks']} sparsity hooks")
 
     # Create HFLM evaluator
     print("\nInitializing lm_eval HFLM...")
@@ -221,6 +234,10 @@ def main():
         num_fewshot=args.num_fewshot,
         batch_size=args.batch_size,
     )
+
+    # Clean up sparsity hooks if they were applied
+    if sparsity_hooks is not None:
+        remove_activation_sparsity_hooks(sparsity_hooks)
 
     # Print results
     print("\n" + "="*60)

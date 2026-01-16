@@ -3,6 +3,7 @@ import torch.nn as nn
 from transformers import AutoTokenizer, AutoModelForCausalLM
 from smoothquant.smooth import smooth_lm
 from smoothquant.fake_quant import quantize_model
+from smoothquant.sparse import apply_activation_sparsity_to_model, remove_activation_sparsity_hooks
 import tqdm
 
 from datasets import load_dataset
@@ -101,6 +102,9 @@ if args.smooth:
     print("smooth...")
     act_scales = torch.load(act_scales_path)
     smooth_lm(model, act_scales, alpha)
+
+sparsity_hooks = None
+
 if args.quantize:
     print("quantize...")
     model = quantize_model(
@@ -113,6 +117,18 @@ if args.quantize:
         act_sparsity_n=act_sparsity_n,
         act_sparsity_m=act_sparsity_m,
     )
+elif act_sparsity_n and act_sparsity_m:
+    print(f"\nApplying activation sparsity ({act_sparsity_n}:{act_sparsity_m}) without quantization...")
+    sparsity_hooks = apply_activation_sparsity_to_model(
+        model,
+        act_sparsity_n=act_sparsity_n,
+        act_sparsity_m=act_sparsity_m,
+    )
+    print(f"Registered {sparsity_hooks['num_hooks']} sparsity hooks")
 
 ppl = evaluator.evaluate(model)
 print(f"Perplexity: {ppl}")
+
+# Clean up sparsity hooks if they were applied
+if sparsity_hooks is not None:
+    remove_activation_sparsity_hooks(sparsity_hooks)
