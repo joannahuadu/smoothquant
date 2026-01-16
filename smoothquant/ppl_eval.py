@@ -49,10 +49,12 @@ n_samples = args.n_samples
 act_sparsity = args.act_sparsity
 w_bits = args.w_bits
 a_bits = args.a_bits
+print(f"W{w_bits}A{a_bits} Quantization.")
 act_sparsity_n = 0
 act_sparsity_m = 0
 if act_sparsity:
     act_sparsity_n, act_sparsity_m = map(int, act_sparsity.split(":"))
+print(f"N:M Sparsity: {act_sparsity_n}: {act_sparsity_m}.")
 
 
 class Evaluator:
@@ -97,14 +99,14 @@ model = AutoModelForCausalLM.from_pretrained(
 )
 
 if args.smooth:
+    print("smooth...")
     act_scales = torch.load(act_scales_path)
     smooth_lm(model, act_scales, alpha)
 
-# Track sparsity hooks
 sparsity_hooks = None
 
 if args.quantize:
-    # Apply quantization (may include sparsity)
+    print("quantize...")
     model = quantize_model(
         model,
         weight_quant="per_channel",
@@ -116,7 +118,6 @@ if args.quantize:
         act_sparsity_m=act_sparsity_m,
     )
 elif act_sparsity_n and act_sparsity_m:
-    # Apply only sparsity without quantization
     print(f"\nApplying activation sparsity ({act_sparsity_n}:{act_sparsity_m}) without quantization...")
     sparsity_hooks = apply_activation_sparsity_to_model(
         model,
