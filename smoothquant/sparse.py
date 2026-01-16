@@ -49,7 +49,7 @@ class ActivationSparsityHook:
             # If tensor is too large, use sampling to estimate quantiles
             if num_elements > 1000000:  # Sample if more than 1M elements
                 sample_size = min(100000, num_elements)  # Sample up to 100k elements
-                indices = torch.randperm(num_elements, device=weight.device)[:sample_size]
+                indices = torch.randperm(num_elements)[:sample_size]
                 weight_sample = weight_flat[indices]
                 q_low = torch.quantile(weight_sample, 0.005)
                 q_high = torch.quantile(weight_sample, 0.995)
