@@ -113,15 +113,9 @@ def parse_args():
         help="Path to save evaluation results as JSON",
     )
     parser.add_argument(
-        "--device",
-        type=str,
-        default="cuda",
-        help="Device to run evaluation on (default: cuda)",
-    )
-    parser.add_argument(
         "--torch_dtype",
         type=str,
-        default="float16",
+        default="bfloat16",
         choices=["float32", "float16", "bfloat16"],
         help="Torch dtype for model loading (default: float16)",
     )
@@ -217,7 +211,7 @@ def main():
 
     # Create HFLM evaluator
     print("\nInitializing lm_eval HFLM...")
-    lm = HFLM(pretrained=model, tokenizer=tokenizer, device=args.device)
+    lm = HFLM(pretrained=model, tokenizer=tokenizer)
 
     # Run evaluation
     print(f"\nEvaluating on {tasks_list}...")

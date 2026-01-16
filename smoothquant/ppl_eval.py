@@ -48,11 +48,12 @@ n_samples = args.n_samples
 act_sparsity = args.act_sparsity
 w_bits = args.w_bits
 a_bits = args.a_bits
+print(f"W{w_bits}A{a_bits} Quantization.")
 act_sparsity_n = 0
 act_sparsity_m = 0
 if act_sparsity:
     act_sparsity_n, act_sparsity_m = map(int, act_sparsity.split(":"))
-print(f"N:M Sparsity: {act_sparsity_n}: {act_sparsity_m}")
+print(f"N:M Sparsity: {act_sparsity_n}: {act_sparsity_m}.")
 
 
 class Evaluator:
