@@ -38,20 +38,19 @@ class ActivationSparsityHook:
         self.act_sparsity_m = act_sparsity_m
 
     @torch.no_grad()
-    def __call__(self, module, input, output):
+    def __call__(self, module, input):
         """
-        Forward hook that applies activation sparsity to the input.
+        Forward pre-hook that applies activation sparsity to the input.
 
         Args:
             module: The module (unused, kept for hook signature)
             input: Tuple containing the input tensor
-            output: The output tensor (unused, kept for hook signature)
 
         Returns:
-            The sparsified input tensor (same as modified input)
+            Tuple containing the modified input tensor
         """
         x = input[0]
-        return self.apply_activation_sparsity(x)
+        return (self.apply_activation_sparsity(x),)
 
     @torch.no_grad()
     def apply_activation_sparsity(self, x):
