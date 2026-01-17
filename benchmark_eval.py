@@ -216,7 +216,7 @@ def main():
         if os.path.exists(args.act_scales_path):
             print(f"\nLoading activation scales from {args.act_scales_path}")
             act_scales = torch.load(args.act_scales_path)
-            print(f"Applying SmoothQuant smoothing with alpha={args.alpha}...")
+            print(f"Applying SmoothQuant smoothing with alpha={args.alpha}, invert={args.invert_scales}...")
             smooth_lm(model, act_scales, args.alpha, invert_scales=args.invert_scales)
             print("Smoothing applied successfully")
         else:

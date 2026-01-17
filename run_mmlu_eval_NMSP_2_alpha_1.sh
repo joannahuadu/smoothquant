@@ -22,7 +22,7 @@ declare -a target_modules_configs=(
     "${config}"
 )
 
-ALPHAS=(0.0 0.15 0.25 0.5)
+ALPHAS=(0.75 0.85 0.99)
 
 for config in "${target_modules_configs[@]}"; do
     echo "========================================"
