@@ -11,11 +11,6 @@ declare -a target_modules_configs=(
     "lm_head,q_proj"
     "lm_head,k_proj"
     "lm_head,v_proj"
-    "lm_head,q_proj,k_proj,v_proj"
-    "lm_head,gate_proj"
-    "lm_head,up_proj"
-    "lm_head,down_proj"
-    "lm_head,gate_proj,up_proj,down_proj"
 )
 
 # Run evaluation for each configuration
