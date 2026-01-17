@@ -2,8 +2,6 @@
 
 export CUDA_VISIBLE_DEVICES=3
 
-MODEL_PATH="/gemini/code/checkpoints/models--meta-llama--Llama-3.1-8B/snapshots/d04e592bb4f6aa9cfee91e2e20afa771667e1d4b"
-
 # Base target modules
 base_targets=("lm_head" "up_proj" "k_proj" "v_proj" "o_proj")
 
@@ -21,21 +19,27 @@ declare -a target_modules_configs=(
     "${config}"
 )
 
-# Run evaluation for each configuration
+ALPHAS=(0.75 0.85 0.99)
+
 for config in "${target_modules_configs[@]}"; do
     echo "========================================"
     echo "Evaluating with target_modules: ${config}"
     echo "========================================"
-
-    python smoothquant/ppl_eval.py \
-        --model_path ${MODEL_PATH} \
-        --act_sparsity 2:4 \
-        --target_modules "${config}" \
-        --no-weight_scoring
-
+    for alpha in "${ALPHAS[@]}"; do
+        echo "Running with alpha=${alpha}"
+        python smoothquant/ppl_eval.py \
+            --alpha ${alpha} \
+            --model_path /gemini/code/checkpoints/models--meta-llama--Llama-3.1-8B/snapshots/d04e592bb4f6aa9cfee91e2e20afa771667e1d4b \
+            --act_scales_path act_scales/llama-3.1-8B.pt \
+            --smooth \
+            --quantize \
+            --act_sparsity 2:4 \
+            --target_modules "${config}" \
+            --no-weight_scoring
+            
+    done
     echo ""
     echo "Finished evaluation for: ${config}"
     echo ""
 done
-
 echo "All evaluations completed!"
