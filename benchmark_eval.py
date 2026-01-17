@@ -88,6 +88,13 @@ def parse_args():
         help="Enable quantization (must also set w_bits and a_bits)",
     )
     parser.add_argument(
+        "--act_sparsity_location",
+        type=str,
+        default="pre_quant",
+        choices=["pre_quant", "post_quant"],
+        help="Where to apply activation sparsity when quantizing (default: pre_quant)",
+    )
+    parser.add_argument(
         "--weight_scoring",
         action=argparse.BooleanOptionalAction,
         default=True,
@@ -217,6 +224,7 @@ def main():
             act_sparsity_n=act_sparsity_n,
             act_sparsity_m=act_sparsity_m,
             weight_scoring=args.weight_scoring,
+            act_sparsity_location=args.act_sparsity_location,
         )
         print("Quantization applied successfully")
     elif act_sparsity_n and act_sparsity_m:
