@@ -103,8 +103,8 @@ def parse_args():
         "--act_sparsity_location",
         type=str,
         default="pre_quant",
-        choices=["pre_quant", "post_quant"],
-        help="Where to apply activation sparsity when quantizing (default: pre_quant)",
+        choices=["pre_quant", "post_quant", "pre_smooth"],
+        help="Where to apply activation sparsity when quantizing (default: pre_quant). Use pre_smooth to hook LN inputs before SmoothQuant",
     )
     parser.add_argument(
         "--weight_scoring",
