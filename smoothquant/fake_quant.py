@@ -79,7 +79,7 @@ class W8A8Linear(nn.Module):
         self.act_sparsity_n = act_sparsity_n
         self.act_sparsity_m = act_sparsity_m
         self.act_sparsity_location = act_sparsity_location
-        if self.act_sparsity_location not in ("pre_quant", "post_quant"):
+        if self.act_sparsity_location not in ("pre_quant", "post_quant", "pre_smooth"):
             raise ValueError(
                 f"Invalid act_sparsity_location: {self.act_sparsity_location}"
             )
@@ -754,6 +754,18 @@ def quantize_model(
     from transformers.models.mistral.modeling_mistral import MistralPreTrainedModel
     from transformers.models.mixtral.modeling_mixtral import MixtralPreTrainedModel
     from transformers.models.falcon.modeling_falcon import FalconPreTrainedModel
+
+    if act_sparsity_location == "pre_smooth" and act_sparsity_n and act_sparsity_m:
+        from smoothquant.smooth import hook_ln_sparsity
+
+        ln_sparsity_hooks = hook_ln_sparsity(
+            model,
+            act_sparsity_n=act_sparsity_n,
+            act_sparsity_m=act_sparsity_m,
+            target_modules=target_modules,
+            weight_scoring=weight_scoring,
+        )
+        setattr(model, "_ln_sparsity_hooks", ln_sparsity_hooks)
 
     if isinstance(model, OPTPreTrainedModel):
         return quantize_opt(
