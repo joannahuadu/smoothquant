@@ -20,6 +20,12 @@ parser.add_argument(
 )
 parser.add_argument("--n_samples", type=int, default=None)
 parser.add_argument("--smooth", action="store_true")
+parser.add_argument(
+    "--invert_scales",
+    action=argparse.BooleanOptionalAction,
+    default=False,
+    help="Invert SmoothQuant scales (scales = 1/scales)",
+)
 parser.add_argument("--quantize", action="store_true")
 parser.add_argument(
     "--act_sparsity",
@@ -69,6 +75,8 @@ act_sparsity = args.act_sparsity
 w_bits = args.w_bits
 a_bits = args.a_bits
 target_modules = args.target_modules.split(",") if args.target_modules else None
+if target_modules:
+    print(f"Target modules: {target_modules}")
 weight_scoring = args.weight_scoring
 act_sparsity_location = args.act_sparsity_location
 print(f"W{w_bits}A{a_bits} Quantization.")
@@ -123,7 +131,7 @@ model = AutoModelForCausalLM.from_pretrained(
 if args.smooth:
     print("smooth...")
     act_scales = torch.load(act_scales_path)
-    smooth_lm(model, act_scales, alpha)
+    smooth_lm(model, act_scales, alpha, invert_scales=args.invert_scales)
 
 sparsity_hooks = None
 

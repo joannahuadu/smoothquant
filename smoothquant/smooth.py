@@ -16,7 +16,7 @@ from transformers.models.falcon.modeling_falcon import FalconDecoderLayer
 
 
 @torch.no_grad()
-def smooth_ln_fcs(ln, fcs, act_scales, alpha=0.5):
+def smooth_ln_fcs(ln, fcs, act_scales, alpha=0.5, invert_scales=False):
     if not isinstance(fcs, list):
         fcs = [fcs]
     assert isinstance(ln, nn.LayerNorm)
@@ -37,6 +37,8 @@ def smooth_ln_fcs(ln, fcs, act_scales, alpha=0.5):
         .to(device)
         .to(dtype)
     )
+    if invert_scales:
+        scales = 1.0 / scales
 
     ln.weight.div_(scales)
     ln.bias.div_(scales)
@@ -46,7 +48,7 @@ def smooth_ln_fcs(ln, fcs, act_scales, alpha=0.5):
 
 
 @torch.no_grad()
-def smooth_ln_fcs_llama_like(ln, fcs, act_scales, alpha=0.5):
+def smooth_ln_fcs_llama_like(ln, fcs, act_scales, alpha=0.5, invert_scales=False):
     if not isinstance(fcs, list):
         fcs = [fcs]
     assert isinstance(ln, (LlamaRMSNorm, MistralRMSNorm, MixtralRMSNorm))
@@ -65,6 +67,8 @@ def smooth_ln_fcs_llama_like(ln, fcs, act_scales, alpha=0.5):
         .to(device)
         .to(dtype)
     )
+    if invert_scales:
+        scales = 1.0 / scales
 
     ln.weight.div_(scales)
     for fc in fcs:
@@ -72,7 +76,7 @@ def smooth_ln_fcs_llama_like(ln, fcs, act_scales, alpha=0.5):
 
 
 @torch.no_grad()
-def smooth_lm(model, scales, alpha=0.5):
+def smooth_lm(model, scales, alpha=0.5, invert_scales=False):
     for name, module in model.named_modules():
         if isinstance(module, OPTDecoderLayer):
             attn_ln = module.self_attn_layer_norm
@@ -82,22 +86,22 @@ def smooth_lm(model, scales, alpha=0.5):
                 module.self_attn.v_proj,
             ]
             qkv_input_scales = scales[name + ".self_attn.q_proj"]
-            smooth_ln_fcs(attn_ln, qkv, qkv_input_scales, alpha)
+            smooth_ln_fcs(attn_ln, qkv, qkv_input_scales, alpha, invert_scales)
 
             ffn_ln = module.final_layer_norm
             fc1 = module.fc1
             fc1_input_scales = scales[name + ".fc1"]
-            smooth_ln_fcs(ffn_ln, fc1, fc1_input_scales, alpha)
+            smooth_ln_fcs(ffn_ln, fc1, fc1_input_scales, alpha, invert_scales)
         elif isinstance(module, BloomBlock):
             attn_ln = module.input_layernorm
             qkv = module.self_attention.query_key_value
             qkv_input_scales = scales[name + ".self_attention.query_key_value"]
-            smooth_ln_fcs(attn_ln, qkv, qkv_input_scales, alpha)
+            smooth_ln_fcs(attn_ln, qkv, qkv_input_scales, alpha, invert_scales)
 
             ffn_ln = module.post_attention_layernorm
             fc1 = module.mlp.dense_h_to_4h
             fc1_input_scales = scales[name + ".mlp.dense_h_to_4h"]
-            smooth_ln_fcs(ffn_ln, fc1, fc1_input_scales, alpha)
+            smooth_ln_fcs(ffn_ln, fc1, fc1_input_scales, alpha, invert_scales)
         elif isinstance(module, FalconDecoderLayer):
             qkv = module.self_attention.query_key_value
             qkv_input_scales = scales[name + ".self_attention.query_key_value"]
@@ -109,7 +113,7 @@ def smooth_lm(model, scales, alpha=0.5):
                 and module.config.parallel_attn
             ):
                 attn_ln = module.input_layernorm
-                smooth_ln_fcs(attn_ln, [qkv, fc1], qkv_input_scales, alpha)
+                smooth_ln_fcs(attn_ln, [qkv, fc1], qkv_input_scales, alpha, invert_scales)
             else:
                 attn_ln = (
                     module.ln_attn
@@ -121,8 +125,8 @@ def smooth_lm(model, scales, alpha=0.5):
                     if module.config.new_decoder_architecture
                     else module.post_attention_layernorm
                 )
-                smooth_ln_fcs(attn_ln, qkv, qkv_input_scales, alpha)
-                smooth_ln_fcs(ffn_ln, fc1, fc1_input_scales, alpha)
+                smooth_ln_fcs(attn_ln, qkv, qkv_input_scales, alpha, invert_scales)
+                smooth_ln_fcs(ffn_ln, fc1, fc1_input_scales, alpha, invert_scales)
         elif isinstance(module, (LlamaDecoderLayer, MistralDecoderLayer)):
             attn_ln = module.input_layernorm  # attention forward norm
             qkv = [
@@ -132,13 +136,13 @@ def smooth_lm(model, scales, alpha=0.5):
             ]
 
             qkv_input_scales = scales[name + ".self_attn.q_proj"]
-            smooth_ln_fcs_llama_like(attn_ln, qkv, qkv_input_scales, alpha)
+            smooth_ln_fcs_llama_like(attn_ln, qkv, qkv_input_scales, alpha, invert_scales)
 
             ffn_ln = module.post_attention_layernorm  # feed forward norm
             fcs = [module.mlp.gate_proj, module.mlp.up_proj]
             fcs_input_scales = scales[name + ".mlp.gate_proj"]
 
-            smooth_ln_fcs_llama_like(ffn_ln, fcs, fcs_input_scales, alpha)
+            smooth_ln_fcs_llama_like(ffn_ln, fcs, fcs_input_scales, alpha, invert_scales)
         elif isinstance(module, MixtralDecoderLayer):
             attn_ln = module.input_layernorm  # attention forward norm
             qkv = [
@@ -148,7 +152,7 @@ def smooth_lm(model, scales, alpha=0.5):
             ]
 
             qkv_input_scales = scales[name + ".self_attn.q_proj"]
-            smooth_ln_fcs_llama_like(attn_ln, qkv, qkv_input_scales, alpha)
+            smooth_ln_fcs_llama_like(attn_ln, qkv, qkv_input_scales, alpha, invert_scales)
 
             ffn_ln = module.post_attention_layernorm  # feed forward norm
             fcs = [module.block_sparse_moe.gate]
@@ -157,4 +161,4 @@ def smooth_lm(model, scales, alpha=0.5):
                 fcs.append(expert.w3)
             fcs_input_scales = scales[name + ".block_sparse_moe.gate"]
 
-            smooth_ln_fcs_llama_like(ffn_ln, fcs, fcs_input_scales, alpha)
+            smooth_ln_fcs_llama_like(ffn_ln, fcs, fcs_input_scales, alpha, invert_scales)

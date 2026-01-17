@@ -65,6 +65,12 @@ def parse_args():
         help="Path to activation scales file for SmoothQuant",
     )
     parser.add_argument(
+        "--invert_scales",
+        action=argparse.BooleanOptionalAction,
+        default=False,
+        help="Invert SmoothQuant scales (scales = 1/scales)",
+    )
+    parser.add_argument(
         "--w_bits",
         type=int,
         default=8,
@@ -81,6 +87,12 @@ def parse_args():
         type=str,
         default="",
         help="Enable activation N:M sparsity, format '2:4'. Empty disables.",
+    )
+    parser.add_argument(
+        "--target_modules",
+        type=str,
+        default=None,
+        help="Target modules for sparsity (e.g., 'q_proj,k_proj,v_proj')",
     )
     parser.add_argument(
         "--quantize",
@@ -151,6 +163,9 @@ def main():
     if args.act_sparsity:
         act_sparsity_n, act_sparsity_m = map(int, args.act_sparsity.split(":"))
         print(f"Enabling activation sparsity {act_sparsity_n}:{act_sparsity_m}")
+    target_modules = args.target_modules.split(",") if args.target_modules else None
+    if target_modules:
+        print(f"Target modules: {target_modules}")
 
     # Set torch dtype
     dtype_map = {
@@ -202,7 +217,7 @@ def main():
             print(f"\nLoading activation scales from {args.act_scales_path}")
             act_scales = torch.load(args.act_scales_path)
             print(f"Applying SmoothQuant smoothing with alpha={args.alpha}...")
-            smooth_lm(model, act_scales, args.alpha)
+            smooth_lm(model, act_scales, args.alpha, invert_scales=args.invert_scales)
             print("Smoothing applied successfully")
         else:
             print(f"Warning: Activation scales file not found: {args.act_scales_path}")
@@ -228,6 +243,7 @@ def main():
             act_sparsity_m=act_sparsity_m,
             weight_scoring=args.weight_scoring,
             act_sparsity_location=args.act_sparsity_location,
+            target_modules=target_modules,
         )
         print("Quantization applied successfully")
     elif act_sparsity_n and act_sparsity_m:
@@ -237,6 +253,7 @@ def main():
             model,
             act_sparsity_n=act_sparsity_n,
             act_sparsity_m=act_sparsity_m,
+            target_modules=target_modules,
             weight_scoring=args.weight_scoring,
         )
         print(f"Registered {sparsity_hooks['num_hooks']} sparsity hooks")
