@@ -51,6 +51,13 @@ parser.add_argument(
     default=True,
     help="Enable weight scoring for sparsity scaling (default: True)",
 )
+parser.add_argument(
+    "--act_sparsity_location",
+    type=str,
+    default="pre_quant",
+    choices=["pre_quant", "post_quant"],
+    help="Where to apply activation sparsity when quantizing (default: pre_quant)",
+)
 
 
 args = parser.parse_args()
@@ -63,6 +70,7 @@ w_bits = args.w_bits
 a_bits = args.a_bits
 target_modules = args.target_modules.split(",") if args.target_modules else None
 weight_scoring = args.weight_scoring
+act_sparsity_location = args.act_sparsity_location
 print(f"W{w_bits}A{a_bits} Quantization.")
 act_sparsity_n = 0
 act_sparsity_m = 0
@@ -132,6 +140,7 @@ if args.quantize:
         act_sparsity_m=act_sparsity_m,
         target_modules=target_modules,
         weight_scoring=weight_scoring,
+        act_sparsity_location=act_sparsity_location,
     )
 elif act_sparsity_n and act_sparsity_m:
     print(f"\nApplying activation sparsity ({act_sparsity_n}:{act_sparsity_m}) without quantization...")
