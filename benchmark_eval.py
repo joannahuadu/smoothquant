@@ -229,6 +229,9 @@ def main():
     # Apply quantization if specified
     if quantize_enabled:
         print(f"\nApplying w{args.w_bits}a{args.a_bits} quantization...")
+        print(f"target_modules: {args.target_modules}")
+        print(f"N:M: {act_sparsity_n}:{act_sparsity_m}")
+        print(f"act_sparsity_location: {args.act_sparsity_location}")
         model = quantize_model(
             model,
             weight_quant="per_channel",

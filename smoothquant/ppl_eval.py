@@ -137,6 +137,9 @@ sparsity_hooks = None
 
 if args.quantize:
     print("quantize...")
+    print(f"target_modules: {target_modules}")
+    print(f"N:M: {act_sparsity_n}:{act_sparsity_m}")
+    print(f"act_sparsity_location: {act_sparsity_location}")
     model = quantize_model(
         model,
         weight_quant="per_channel",
