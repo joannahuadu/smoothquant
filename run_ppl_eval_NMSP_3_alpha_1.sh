@@ -36,7 +36,8 @@ for config in "${target_modules_configs[@]}"; do
             --act_sparsity 2:4 \
             --target_modules "${config}" \
             --no-weight_scoring \
-            --act_sparsity_location post_quant
+            --act_sparsity_location post_quant \
+            --invert_scales
             
     done
     echo ""

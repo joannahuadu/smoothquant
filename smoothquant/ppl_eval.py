@@ -129,7 +129,7 @@ model = AutoModelForCausalLM.from_pretrained(
 )
 
 if args.smooth:
-    print("smooth...")
+    print(f"smooth (invert scales{args.invert_scales})...")
     act_scales = torch.load(act_scales_path)
     smooth_lm(model, act_scales, alpha, invert_scales=args.invert_scales)
 
