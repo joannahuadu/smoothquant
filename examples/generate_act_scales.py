@@ -9,6 +9,7 @@ import argparse
 
 from datasets import load_dataset
 from smoothquant.calibration import get_act_scales, get_act_scales_from_dataset
+from smoothquant.smooth import hook_ln_sparsity
 
 
 def build_model_and_tokenizer(model_name):
@@ -55,6 +56,31 @@ def parse_args():
     )
     parser.add_argument("--num-samples", type=int, default=512)
     parser.add_argument("--seq-len", type=int, default=512)
+    parser.add_argument(
+        "--act_sparsity",
+        type=str,
+        default="",
+        help="Enable activation N:M sparsity for calibration, format '2:4'.",
+    )
+    parser.add_argument(
+        "--act_sparsity_location",
+        type=str,
+        default="none",
+        choices=["none", "pre_smooth"],
+        help="Apply sparsity at LN inputs before SmoothQuant (pre_smooth).",
+    )
+    parser.add_argument(
+        "--target_modules",
+        type=str,
+        default=None,
+        help="Target modules for sparsity (e.g., 'q_proj,k_proj,v_proj').",
+    )
+    parser.add_argument(
+        "--weight_scoring",
+        action=argparse.BooleanOptionalAction,
+        default=True,
+        help="Enable weight scoring for sparsity scaling (default: True).",
+    )
     args = parser.parse_args()
     return args
 
@@ -63,6 +89,24 @@ def parse_args():
 def main():
     args = parse_args()
     model, tokenizer = build_model_and_tokenizer(args.model_name)
+    target_modules = args.target_modules.split(",") if args.target_modules else None
+    act_sparsity_n = 0
+    act_sparsity_m = 0
+    if args.act_sparsity:
+        act_sparsity_n, act_sparsity_m = map(int, args.act_sparsity.split(":"))
+    sparsity_hooks = None
+    if (
+        args.act_sparsity_location == "pre_smooth"
+        and act_sparsity_n
+        and act_sparsity_m
+    ):
+        sparsity_hooks = hook_ln_sparsity(
+            model,
+            act_sparsity_n=act_sparsity_n,
+            act_sparsity_m=act_sparsity_m,
+            target_modules=target_modules,
+            weight_scoring=args.weight_scoring,
+        )
 
     if args.hf_dataset:
         dataset = load_dataset(
@@ -85,6 +129,10 @@ def main():
         act_scales = get_act_scales(
             model, tokenizer, args.dataset_path, args.num_samples, args.seq_len
         )
+
+    if sparsity_hooks is not None:
+        for handle in sparsity_hooks["hooks"]:
+            handle.remove()
 
     os.makedirs(os.path.dirname(args.output_path), exist_ok=True)
     torch.save(act_scales, args.output_path)

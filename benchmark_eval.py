@@ -274,6 +274,9 @@ def main():
     # Clean up sparsity hooks if they were applied
     if sparsity_hooks is not None:
         remove_activation_sparsity_hooks(sparsity_hooks)
+    if hasattr(model, "_ln_sparsity_hooks"):
+        remove_activation_sparsity_hooks(model._ln_sparsity_hooks)
+        delattr(model, "_ln_sparsity_hooks")
 
     # Print results
     print("\n" + "="*60)
