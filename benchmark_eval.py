@@ -87,6 +87,12 @@ def parse_args():
         action="store_true",
         help="Enable quantization (must also set w_bits and a_bits)",
     )
+    parser.add_argument(
+        "--weight_scoring",
+        action=argparse.BooleanOptionalAction,
+        default=True,
+        help="Enable weight scoring for sparsity scaling (default: True)",
+    )
 
     # Evaluation arguments
     parser.add_argument(
@@ -210,6 +216,7 @@ def main():
             quantize_bmm_input=True,
             act_sparsity_n=act_sparsity_n,
             act_sparsity_m=act_sparsity_m,
+            weight_scoring=args.weight_scoring,
         )
         print("Quantization applied successfully")
     elif act_sparsity_n and act_sparsity_m:
@@ -219,6 +226,7 @@ def main():
             model,
             act_sparsity_n=act_sparsity_n,
             act_sparsity_m=act_sparsity_m,
+            weight_scoring=args.weight_scoring,
         )
         print(f"Registered {sparsity_hooks['num_hooks']} sparsity hooks")
 

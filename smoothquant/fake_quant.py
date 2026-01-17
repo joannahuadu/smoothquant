@@ -174,6 +174,7 @@ class W8A8Linear(nn.Module):
         act_scale=None,
         act_sparsity_n=2,
         act_sparsity_m=4,
+        weight_scoring=True,
     ):
         assert isinstance(module, torch.nn.Linear)
         new_module = W8A8Linear(
@@ -204,35 +205,38 @@ class W8A8Linear(nn.Module):
 
         with torch.no_grad():
             weight = new_module.weight.float()
-            weight_flat = weight.flatten()
-            num_elements = weight_flat.numel()
-            if num_elements > 1000000:
-                sample_size = min(100000, num_elements)
-                indices = torch.randperm(num_elements, device=weight.device)[:sample_size]
-                weight_sample = weight_flat[indices]
-                q_low = torch.quantile(weight_sample, 0.005)
-                q_high = torch.quantile(weight_sample, 0.995)
+            if weight_scoring:
+                weight_flat = weight.flatten()
+                num_elements = weight_flat.numel()
+                if num_elements > 1000000:
+                    sample_size = min(100000, num_elements)
+                    indices = torch.randperm(num_elements, device=weight.device)[:sample_size]
+                    weight_sample = weight_flat[indices]
+                    q_low = torch.quantile(weight_sample, 0.005)
+                    q_high = torch.quantile(weight_sample, 0.995)
+                else:
+                    q_low = torch.quantile(weight_flat, 0.005)
+                    q_high = torch.quantile(weight_flat, 0.995)
+                within_range = (weight >= q_low) & (weight <= q_high)
+
+                if within_range.sum() < 2:
+                    weight_processed = weight
+                else:
+                    w_filtered = weight[within_range]
+                    mean = w_filtered.mean()
+                    std = w_filtered.std()
+
+                    std = std.clamp(min=1e-8)
+
+                    weight_processed = (weight - mean) / std
+                    weight_processed = weight_processed.clamp(
+                        min=(q_low - mean) / std,
+                        max=(q_high - mean) / std
+                    )
+
+                w_col_norm = weight_processed.pow(2).sum(dim=0).sqrt()
             else:
-                q_low = torch.quantile(weight_flat, 0.005)
-                q_high = torch.quantile(weight_flat, 0.995)
-            within_range = (weight >= q_low) & (weight <= q_high)
-
-            if within_range.sum() < 2:
-                weight_processed = weight
-            else:
-                w_filtered = weight[within_range]
-                mean = w_filtered.mean()
-                std = w_filtered.std()
-
-                std = std.clamp(min=1e-8)
-
-                weight_processed = (weight - mean) / std
-                weight_processed = weight_processed.clamp(
-                    min=(q_low - mean) / std,
-                    max=(q_high - mean) / std
-                )
-
-            w_col_norm = weight_processed.pow(2).sum(dim=0).sqrt()
+                w_col_norm = weight.pow(2).sum(dim=0).sqrt()
             min_norm = w_col_norm.min().clamp(min=1e-5)
             new_module.sparsity_scale = (w_col_norm / min_norm).view(1, -1)
 
@@ -252,6 +256,7 @@ def quantize_opt(
     act_sparsity_n=0,
     act_sparsity_m=0,
     target_modules=None,
+    weight_scoring=True,
 ):
     from transformers.models.opt.modeling_opt import (
         OPTAttention,
@@ -277,6 +282,7 @@ def quantize_opt(
                 act_quant=act_quant,
                 act_sparsity_n=fc1_sparsity[0],
                 act_sparsity_m=fc1_sparsity[1],
+                weight_scoring=weight_scoring,
             )
             m.fc2 = W8A8Linear.from_float(
                 m.fc2,
@@ -286,6 +292,7 @@ def quantize_opt(
                 act_quant=act_quant,
                 act_sparsity_n=fc2_sparsity[0],
                 act_sparsity_m=fc2_sparsity[1],
+                weight_scoring=weight_scoring,
             )
         elif isinstance(m, OPTAttention):
             # Determine sparsity for each module
@@ -304,6 +311,7 @@ def quantize_opt(
                 quantize_output=quantize_bmm_input,
                 act_sparsity_n=q_sparsity[0],
                 act_sparsity_m=q_sparsity[1],
+                weight_scoring=weight_scoring,
             )
             m.k_proj = W8A8Linear.from_float(
                 m.k_proj,
@@ -314,6 +322,7 @@ def quantize_opt(
                 quantize_output=quantize_bmm_input,
                 act_sparsity_n=k_sparsity[0],
                 act_sparsity_m=k_sparsity[1],
+                weight_scoring=weight_scoring,
             )
             m.v_proj = W8A8Linear.from_float(
                 m.v_proj,
@@ -324,6 +333,7 @@ def quantize_opt(
                 quantize_output=quantize_bmm_input,
                 act_sparsity_n=v_sparsity[0],
                 act_sparsity_m=v_sparsity[1],
+                weight_scoring=weight_scoring,
             )
             m.out_proj = W8A8Linear.from_float(
                 m.out_proj,
@@ -333,6 +343,7 @@ def quantize_opt(
                 act_quant=act_quant,
                 act_sparsity_n=out_sparsity[0],
                 act_sparsity_m=out_sparsity[1],
+                weight_scoring=weight_scoring,
             )
     return model
 
@@ -348,6 +359,7 @@ def quantize_llama_like(
     act_sparsity_n=0,
     act_sparsity_m=0,
     target_modules=None,
+    weight_scoring=True,
 ):
     from transformers.models.llama.modeling_llama import (
         LlamaAttention,
@@ -391,6 +403,7 @@ def quantize_llama_like(
                 act_scale=get_act_scale(f"{name}.gate_proj"),
                 act_sparsity_n=gate_sparsity[0],
                 act_sparsity_m=gate_sparsity[1],
+                weight_scoring=weight_scoring,
             )
             m.up_proj = W8A8Linear.from_float(
                 m.up_proj,
@@ -401,6 +414,7 @@ def quantize_llama_like(
                 act_scale=get_act_scale(f"{name}.up_proj"),
                 act_sparsity_n=up_sparsity[0],
                 act_sparsity_m=up_sparsity[1],
+                weight_scoring=weight_scoring,
             )
             m.down_proj = W8A8Linear.from_float(
                 m.down_proj,
@@ -411,6 +425,7 @@ def quantize_llama_like(
                 act_scale=get_act_scale(f"{name}.down_proj"),
                 act_sparsity_n=down_sparsity[0],
                 act_sparsity_m=down_sparsity[1],
+                weight_scoring=weight_scoring,
             )
         elif isinstance(m, (LlamaAttention, MistralAttention)):
             # Determine sparsity for each module
@@ -430,6 +445,7 @@ def quantize_llama_like(
                 act_scale=get_act_scale(f"{name}.q_proj"),
                 act_sparsity_n=q_sparsity[0],
                 act_sparsity_m=q_sparsity[1],
+                weight_scoring=weight_scoring,
             )
             m.k_proj = W8A8Linear.from_float(
                 m.k_proj,
@@ -441,6 +457,7 @@ def quantize_llama_like(
                 act_scale=get_act_scale(f"{name}.k_proj"),
                 act_sparsity_n=k_sparsity[0],
                 act_sparsity_m=k_sparsity[1],
+                weight_scoring=weight_scoring,
             )
             m.v_proj = W8A8Linear.from_float(
                 m.v_proj,
@@ -452,6 +469,7 @@ def quantize_llama_like(
                 act_scale=get_act_scale(f"{name}.v_proj"),
                 act_sparsity_n=v_sparsity[0],
                 act_sparsity_m=v_sparsity[1],
+                weight_scoring=weight_scoring,
             )
             m.o_proj = W8A8Linear.from_float(
                 m.o_proj,
@@ -462,6 +480,7 @@ def quantize_llama_like(
                 act_scale=get_act_scale(f"{name}.o_proj"),
                 act_sparsity_n=o_sparsity[0],
                 act_sparsity_m=o_sparsity[1],
+                weight_scoring=weight_scoring,
             )
     return model
 
@@ -476,6 +495,7 @@ def quantize_mixtral(
     act_sparsity_n=0,
     act_sparsity_m=0,
     target_modules=None,
+    weight_scoring=True,
 ):
     from transformers.models.mixtral.modeling_mixtral import (
         MixtralAttention,
@@ -503,6 +523,7 @@ def quantize_mixtral(
                 act_quant=act_quant,
                 act_sparsity_n=w1_sparsity[0],
                 act_sparsity_m=w1_sparsity[1],
+                weight_scoring=weight_scoring,
             )
             m.w2 = W8A8Linear.from_float(
                 m.w2,
@@ -512,6 +533,7 @@ def quantize_mixtral(
                 act_quant=act_quant,
                 act_sparsity_n=w2_sparsity[0],
                 act_sparsity_m=w2_sparsity[1],
+                weight_scoring=weight_scoring,
             )
             m.w3 = W8A8Linear.from_float(
                 m.w3,
@@ -521,6 +543,7 @@ def quantize_mixtral(
                 act_quant=act_quant,
                 act_sparsity_n=w3_sparsity[0],
                 act_sparsity_m=w3_sparsity[1],
+                weight_scoring=weight_scoring,
             )
         elif isinstance(m, MixtralAttention):
             # Determine sparsity for each module
@@ -539,6 +562,7 @@ def quantize_mixtral(
                 quantize_output=quantize_bmm_input,
                 act_sparsity_n=q_sparsity[0],
                 act_sparsity_m=q_sparsity[1],
+                weight_scoring=weight_scoring,
             )
             m.k_proj = W8A8Linear.from_float(
                 m.k_proj,
@@ -549,6 +573,7 @@ def quantize_mixtral(
                 quantize_output=quantize_bmm_input,
                 act_sparsity_n=k_sparsity[0],
                 act_sparsity_m=k_sparsity[1],
+                weight_scoring=weight_scoring,
             )
             m.v_proj = W8A8Linear.from_float(
                 m.v_proj,
@@ -559,6 +584,7 @@ def quantize_mixtral(
                 quantize_output=quantize_bmm_input,
                 act_sparsity_n=v_sparsity[0],
                 act_sparsity_m=v_sparsity[1],
+                weight_scoring=weight_scoring,
             )
             m.o_proj = W8A8Linear.from_float(
                 m.o_proj,
@@ -568,6 +594,7 @@ def quantize_mixtral(
                 act_quant=act_quant,
                 act_sparsity_n=o_sparsity[0],
                 act_sparsity_m=o_sparsity[1],
+                weight_scoring=weight_scoring,
             )
         elif isinstance(m, MixtralSparseMoeBlock):
             gate_sparsity = (act_sparsity_n, act_sparsity_m) if should_apply_sparsity(f"{name}.gate") else (0, 0)
@@ -579,6 +606,7 @@ def quantize_mixtral(
                 act_quant=act_quant,
                 act_sparsity_n=gate_sparsity[0],
                 act_sparsity_m=gate_sparsity[1],
+                weight_scoring=weight_scoring,
             )
     return model
 
@@ -593,6 +621,7 @@ def quantize_falcon(
     act_sparsity_n=0,
     act_sparsity_m=0,
     target_modules=None,
+    weight_scoring=True,
 ):
     from transformers.models.falcon.modeling_falcon import (
         FalconAttention,
@@ -603,7 +632,7 @@ def quantize_falcon(
         """Check if sparsity should be applied to this module."""
         if target_modules is None:
             return True
-        return any(pattern in module_name for pattern in target_modules)
+        return not any(pattern in module_name for pattern in target_modules)
 
     for name, m in model.named_modules():
         if isinstance(m, FalconMLP):
@@ -618,6 +647,7 @@ def quantize_falcon(
                 act_quant=act_quant,
                 act_sparsity_n=dense_h_to_4h_sparsity[0],
                 act_sparsity_m=dense_h_to_4h_sparsity[1],
+                weight_scoring=weight_scoring,
             )
             m.dense_4h_to_h = W8A8Linear.from_float(
                 m.dense_4h_to_h,
@@ -627,6 +657,7 @@ def quantize_falcon(
                 act_quant=act_quant,
                 act_sparsity_n=dense_4h_to_h_sparsity[0],
                 act_sparsity_m=dense_4h_to_h_sparsity[1],
+                weight_scoring=weight_scoring,
             )
         elif isinstance(m, FalconAttention):
             # Determine sparsity for each module
@@ -643,6 +674,7 @@ def quantize_falcon(
                 quantize_output=quantize_bmm_input,
                 act_sparsity_n=qkv_sparsity[0],
                 act_sparsity_m=qkv_sparsity[1],
+                weight_scoring=weight_scoring,
             )
             m.dense = W8A8Linear.from_float(
                 m.dense,
@@ -652,6 +684,7 @@ def quantize_falcon(
                 act_quant=act_quant,
                 act_sparsity_n=dense_sparsity[0],
                 act_sparsity_m=dense_sparsity[1],
+                weight_scoring=weight_scoring,
             )
     return model
 
@@ -666,6 +699,7 @@ def quantize_model(
     act_sparsity_n=0,
     act_sparsity_m=0,
     target_modules=None,
+    weight_scoring=True,
 ):
     from transformers.models.opt.modeling_opt import OPTPreTrainedModel
     from transformers.models.llama.modeling_llama import LlamaPreTrainedModel
@@ -684,6 +718,7 @@ def quantize_model(
             act_sparsity_n=act_sparsity_n,
             act_sparsity_m=act_sparsity_m,
             target_modules=target_modules,
+            weight_scoring=weight_scoring,
         )
     elif isinstance(model, (LlamaPreTrainedModel, MistralPreTrainedModel)):
         return quantize_llama_like(
@@ -696,6 +731,7 @@ def quantize_model(
             act_sparsity_n=act_sparsity_n,
             act_sparsity_m=act_sparsity_m,
             target_modules=target_modules,
+            weight_scoring=weight_scoring,
         )
     elif isinstance(model, MixtralPreTrainedModel):
         return quantize_mixtral(
@@ -708,6 +744,7 @@ def quantize_model(
             act_sparsity_n=act_sparsity_n,
             act_sparsity_m=act_sparsity_m,
             target_modules=target_modules,
+            weight_scoring=weight_scoring,
         )
     elif isinstance(model, FalconPreTrainedModel):
         return quantize_falcon(
@@ -720,6 +757,7 @@ def quantize_model(
             act_sparsity_n=act_sparsity_n,
             act_sparsity_m=act_sparsity_m,
             target_modules=target_modules,
+            weight_scoring=weight_scoring,
         )
     else:
         raise ValueError(f"Unsupported model type: {type(model)}")
