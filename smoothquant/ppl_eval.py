@@ -45,6 +45,12 @@ parser.add_argument(
     default=None,
     help="Target modules for sparsity (e.g., 'q_proj,k_proj,v_proj')",
 )
+parser.add_argument(
+    "--weight_scoring",
+    action=argparse.BooleanOptionalAction,
+    default=True,
+    help="Enable weight scoring for sparsity scaling (default: True)",
+)
 
 
 args = parser.parse_args()
@@ -56,6 +62,7 @@ act_sparsity = args.act_sparsity
 w_bits = args.w_bits
 a_bits = args.a_bits
 target_modules = args.target_modules.split(",") if args.target_modules else None
+weight_scoring = args.weight_scoring
 print(f"W{w_bits}A{a_bits} Quantization.")
 act_sparsity_n = 0
 act_sparsity_m = 0
@@ -124,6 +131,7 @@ if args.quantize:
         act_sparsity_n=act_sparsity_n,
         act_sparsity_m=act_sparsity_m,
         target_modules=target_modules,
+        weight_scoring=weight_scoring,
     )
 elif act_sparsity_n and act_sparsity_m:
     print(f"\nApplying activation sparsity ({act_sparsity_n}:{act_sparsity_m}) without quantization...")
@@ -134,6 +142,7 @@ elif act_sparsity_n and act_sparsity_m:
         act_sparsity_n=act_sparsity_n,
         act_sparsity_m=act_sparsity_m,
         target_modules=target_modules,
+        weight_scoring=weight_scoring,
     )
     print(f"Registered {sparsity_hooks['num_hooks']} sparsity hooks")
 
