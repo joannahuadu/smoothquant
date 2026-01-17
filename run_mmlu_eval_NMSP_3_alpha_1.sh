@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 
-export CUDA_VISIBLE_DEVICES=0
+export CUDA_VISIBLE_DEVICES=1
 
 MODEL_PATH="/gemini/code/checkpoints/models--meta-llama--Llama-3.1-8B/snapshots/d04e592bb4f6aa9cfee91e2e20afa771667e1d4b"
 ACT_SCALES_PATH="act_scales/llama-3.1-8B.pt"
@@ -22,7 +22,7 @@ declare -a target_modules_configs=(
     "${config}"
 )
 
-ALPHAS=(0.0 0.15 0.25 0.5)
+ALPHAS=(0.75 0.85 0.99)
 
 for config in "${target_modules_configs[@]}"; do
     echo "========================================"
@@ -42,7 +42,9 @@ for config in "${target_modules_configs[@]}"; do
             --no-weight_scoring \
             --tasks mmlu \
             --num_fewshot 0 \
-            --output_file /gemini/code/NMSparsity/smoothquant/results/models--meta-llama--Llama-3.1-8B_SQw8a8_alpha${alpha}_MMLU_NMSP_2.json
+            --output_file /gemini/code/NMSparsity/smoothquant/results/models--meta-llama--Llama-3.1-8B_SQw8a8_alpha${alpha}_MMLU_NMSP_3.json \
+            --act_sparsity_location post_quant \
+            --invert_scales
 
     done
     echo ""
