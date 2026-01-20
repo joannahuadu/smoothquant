@@ -27,6 +27,7 @@ from pathlib import Path
 
 from transformers import AutoTokenizer, AutoModelForCausalLM
 from lm_eval import simple_evaluate
+from lm_eval.tasks import initialize_tasks
 from lm_eval.models.huggingface import HFLM
 
 from smoothquant.smooth import smooth_lm
@@ -151,6 +152,8 @@ def parse_args():
 
 def main():
     args = parse_args()
+
+    initialize_tasks()
 
     # Set tokenizer path
     tokenizer_path = args.tokenizer_path or args.model_path
