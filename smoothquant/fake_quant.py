@@ -221,42 +221,47 @@ class W8A8Linear(nn.Module):
         if module.bias is not None:
             new_module.bias = module.bias
 
-        with torch.no_grad():
-            weight = new_module.weight.float()
-            if weight_scoring:
-                weight_flat = weight.flatten()
-                num_elements = weight_flat.numel()
-                if num_elements > 1000000:
-                    sample_size = min(100000, num_elements)
-                    indices = torch.randperm(num_elements, device=weight.device)[:sample_size]
-                    weight_sample = weight_flat[indices]
-                    q_low = torch.quantile(weight_sample, 0.005)
-                    q_high = torch.quantile(weight_sample, 0.995)
+        if (
+            act_sparsity_n
+            and act_sparsity_m
+            and act_sparsity_location == "pre_quant"
+        ):
+            with torch.no_grad():
+                weight = new_module.weight.float()
+                if weight_scoring:
+                    weight_flat = weight.flatten()
+                    num_elements = weight_flat.numel()
+                    if num_elements > 1000000:
+                        sample_size = min(100000, num_elements)
+                        indices = torch.randperm(num_elements, device=weight.device)[:sample_size]
+                        weight_sample = weight_flat[indices]
+                        q_low = torch.quantile(weight_sample, 0.005)
+                        q_high = torch.quantile(weight_sample, 0.995)
+                    else:
+                        q_low = torch.quantile(weight_flat, 0.005)
+                        q_high = torch.quantile(weight_flat, 0.995)
+                    within_range = (weight >= q_low) & (weight <= q_high)
+
+                    if within_range.sum() < 2:
+                        weight_processed = weight
+                    else:
+                        w_filtered = weight[within_range]
+                        mean = w_filtered.mean()
+                        std = w_filtered.std()
+
+                        std = std.clamp(min=1e-8)
+
+                        weight_processed = (weight - mean) / std
+                        weight_processed = weight_processed.clamp(
+                            min=(q_low - mean) / std,
+                            max=(q_high - mean) / std
+                        )
+
+                    w_col_norm = weight_processed.pow(2).sum(dim=0).sqrt()
                 else:
-                    q_low = torch.quantile(weight_flat, 0.005)
-                    q_high = torch.quantile(weight_flat, 0.995)
-                within_range = (weight >= q_low) & (weight <= q_high)
-
-                if within_range.sum() < 2:
-                    weight_processed = weight
-                else:
-                    w_filtered = weight[within_range]
-                    mean = w_filtered.mean()
-                    std = w_filtered.std()
-
-                    std = std.clamp(min=1e-8)
-
-                    weight_processed = (weight - mean) / std
-                    weight_processed = weight_processed.clamp(
-                        min=(q_low - mean) / std,
-                        max=(q_high - mean) / std
-                    )
-
-                w_col_norm = weight_processed.pow(2).sum(dim=0).sqrt()
-            else:
-                w_col_norm = weight.pow(2).sum(dim=0).sqrt()
-            min_norm = w_col_norm.min().clamp(min=1e-5)
-            new_module.sparsity_scale = (w_col_norm / min_norm).view(1, -1)
+                    w_col_norm = weight.pow(2).sum(dim=0).sqrt()
+                min_norm = w_col_norm.min().clamp(min=1e-5)
+                new_module.sparsity_scale = (w_col_norm / min_norm).view(1, -1)
 
         return new_module
 
@@ -384,7 +389,7 @@ def quantize_llama_like(
     act_sparsity_n=0,
     act_sparsity_m=0,
     target_modules=None,
-    weight_scoring=True,
+    weight_scoring=False,
     act_sparsity_location="pre_quant",
 ):
     from transformers.models.llama.modeling_llama import (
